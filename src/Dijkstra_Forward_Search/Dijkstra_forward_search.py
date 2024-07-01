@@ -1,6 +1,7 @@
 from maze_environment import load_level, show_level, save_level_costs
 from math import inf, sqrt
 from heapq import heappop, heappush
+from nm_pathfinder import heuristic
 
 
 def dijkstras_shortest_path(initial_position, destination, graph, adj):
