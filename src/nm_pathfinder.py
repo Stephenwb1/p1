@@ -63,19 +63,18 @@ def in_bounds(point, box):
 def search(boxes, starting_box, destination_box):
     #to convert this to A*, we need to track movement costs
     frontier = PriorityQueue()
-    frontier.put((0, starting_box, 'f'))
-    frontier.put((0, destination_box, 'b'))
+    frontier.put(((0, 0), starting_box, 'f'))
+    frontier.put(((0, 0), destination_box, 'b'))
     forward_reached = dict()
     forward_previous = dict()
     backward_previous = dict()
     backward_reached = dict()
     forward_previous[starting_box] = []
     backward_previous[destination_box] = []
-    forward_reached[starting_box] = 0
-    backward_reached[destination_box] = 0
+    forward_reached[starting_box] = (0, 0)
+    backward_reached[destination_box] = (0, 0)
     starting_point = get_point(starting_box)
     destination_point = get_point(destination_box)
-
     while frontier:
         current_priority, current, dir = frontier.get()
         dest_reached = (dir == 'f' and current == destination_box) or (dir == 'b' and current == starting_box)
@@ -101,21 +100,28 @@ def search(boxes, starting_box, destination_box):
                 path.remove(current)
             return path
         for adj_box in boxes[current]:
-            entry_point = get_point(current, adj_box)
-            center = get_point(adj_box)
-            priority = current_priority + heuristic(entry_point, center)
+            entry_point = get_point(current, adj_box) # Fallback estimate is entry point from center of prev box
+            prev_entry_point = get_point(current) # Fallback estimate is center of prev box
             if dir == 'f':
-                priority += heuristic(center, destination_point)
-                if not adj_box in forward_reached or forward_reached[adj_box] > priority:
+                if forward_previous.get(current, None):
+                    prev_entry_point = get_point(forward_previous[current], current)
+                    entry_point = get_point(current, adj_box, prev_entry_point)
+                distance = current_priority[0] + heuristic(prev_entry_point, entry_point)
+                heuristic_value = heuristic(entry_point, destination_point)
+                if not adj_box in forward_reached or forward_reached[adj_box][0] > distance:
                     forward_previous[adj_box] = current
-                    forward_reached[adj_box] = priority
-                    frontier.put((priority, adj_box, 'f'))
+                    forward_reached[adj_box] = (distance, heuristic_value)
+                    frontier.put(((distance, heuristic_value), adj_box, 'f'))
             else:
-                priority += heuristic(center, starting_point)
-                if not adj_box in backward_reached or backward_reached[adj_box] > priority:
+                if backward_previous.get(current, None):
+                    prev_entry_point = get_point(backward_previous[current], current)
+                    entry_point = get_point(current, adj_box, prev_entry_point)
+                distance = current_priority[0] + heuristic(prev_entry_point, entry_point)
+                heuristic_value = heuristic(entry_point, starting_point)
+                if not adj_box in backward_reached or backward_reached[adj_box][0] > distance:
                     backward_previous[adj_box] = current
-                    backward_reached[adj_box] = priority
-                    frontier.put((priority, adj_box, 'b'))
+                    backward_reached[adj_box] = (distance, heuristic_value)
+                    frontier.put(((distance, heuristic_value), adj_box, 'b'))
 
     return [], []
 
@@ -124,7 +130,7 @@ def search(boxes, starting_box, destination_box):
     #frontier.put(starting_box, 0)
 
 def get_path(history: dict, box) -> list:
-    if box == [] or box == None:
+    if box == None or box == []:
         return []
     return get_path(history, history.get(box, None)) + [box]
 
