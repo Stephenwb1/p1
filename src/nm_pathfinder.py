@@ -1,8 +1,5 @@
-from collections import deque
 from queue import PriorityQueue
-#from Dijkstra import Dijkstra_forward_search
 import math
-import functools
 
 def find_path (source_point, destination_point, mesh):
 
@@ -19,7 +16,10 @@ def find_path (source_point, destination_point, mesh):
         A path (list of points) from source_point to destination_point if exists
         A list of boxes explored by the algorithm
     """
-
+    # remove duplicates
+    mesh["boxes"] = list(set(mesh["boxes"]))
+    for key in mesh["adj"]:
+        mesh["adj"][key] = list(set(mesh["adj"][key]))
     #variables
     start_box = next((box for box in mesh["boxes"] if in_bounds(source_point, box)), None)
     destination_box = next((box for box in mesh["boxes"] if in_bounds(destination_point, box)), None)
@@ -34,7 +34,7 @@ def find_path (source_point, destination_point, mesh):
         return [], []
 
     #BFS to get boxes
-    boxes = search(mesh["adj"], start_box, destination_box)
+    boxes = search(mesh["adj"], start_box, destination_box, source_point, destination_point)
 
     # center = lambda box: ((box[0] + box[1]) / 2.0, (box[2] + box[3]) / 2.0)
     # path = [center(start_box), center(destination_box)]
@@ -49,7 +49,7 @@ def find_path (source_point, destination_point, mesh):
             end_point = destination_point
         path.append(get_point(boxes[i-1], boxes[i], start_point, end_point))
     path.append(destination_point)
-    print("Boxes: ", boxes, " Path: ", path) #print statement for testing
+    #print("Boxes: ", boxes, " Path: ", path) #print statement for testing
     return path, boxes
 #find_path end========================================
 
@@ -60,23 +60,40 @@ def in_bounds(point, box):
             return True
     return False
 
-def search(boxes, starting_box, destination_box):
+def search(boxes, starting_box, destination_box, starting_point=None, destination_point=None):
     #to convert this to A*, we need to track movement costs
     frontier = PriorityQueue()
-    frontier.put(((0, 0), starting_box, 'f'))
-    frontier.put(((0, 0), destination_box, 'b'))
+    frontier.put((0, starting_box, 'f'))
+    frontier.put((0, destination_box, 'b'))
     forward_reached = dict()
     forward_previous = dict()
     backward_previous = dict()
     backward_reached = dict()
-    forward_previous[starting_box] = []
-    backward_previous[destination_box] = []
-    forward_reached[starting_box] = (0, 0)
-    backward_reached[destination_box] = (0, 0)
-    starting_point = get_point(starting_box)
-    destination_point = get_point(destination_box)
+    forward_previous[starting_box] = None
+    backward_previous[destination_box] = None
+    forward_reached[starting_box] = 0
+    backward_reached[destination_box] = 0
+    starting_point = get_point(starting_box) if not starting_point else starting_point
+    destination_point = get_point(destination_box) if not destination_point else destination_point
+    def cost_to_next(current, next, dir):
+        reached = forward_reached if dir == 'f' else backward_reached
+        previous = forward_previous if dir == 'f' else backward_previous
+        prev_entry_point = get_point(previous.get(current, None), current)
+        end_point = None
+        #return reached[current] + heuristic(prev_entry_point if prev_entry_point else center(current), entry_point)
+        if current == starting_box:
+            prev_entry_point = starting_point
+        elif current == destination_box:
+            prev_entry_point = destination_point
+        if next == starting_box and dir == 'b':
+            end_point = starting_point
+        elif next == destination_box and dir == 'f':
+            end_point = destination_point
+        entry_point = get_point(current, next, prev_entry_point, end_point)
+        return reached[current] + heuristic(prev_entry_point, entry_point),\
+            heuristic(entry_point, destination_point if dir == 'f' else starting_point)
     while frontier:
-        current_priority, current, dir = frontier.get()
+        _current_priority, current, dir = frontier.get()
         dest_reached = (dir == 'f' and current == destination_box) or (dir == 'b' and current == starting_box)
         if dest_reached or (current in forward_reached and current in backward_reached):
             # CHANGE
@@ -100,28 +117,27 @@ def search(boxes, starting_box, destination_box):
                 path.remove(current)
             return path
         for adj_box in boxes[current]:
-            entry_point = get_point(current, adj_box) # Fallback estimate is entry point from center of prev box
-            prev_entry_point = get_point(current) # Fallback estimate is center of prev box
+            # prev_entry_point = get_point(current) # Fallback estimate is center of prev box
             if dir == 'f':
-                if forward_previous.get(current, None):
-                    prev_entry_point = get_point(forward_previous[current], current)
-                    entry_point = get_point(current, adj_box, prev_entry_point)
-                distance = current_priority[0] + heuristic(prev_entry_point, entry_point)
-                heuristic_value = heuristic(entry_point, destination_point)
-                if not adj_box in forward_reached or forward_reached[adj_box][0] > distance:
+                # if forward_previous.get(current, None):
+                #     prev_entry_point = get_point(forward_previous[current], current)
+                #     entry_point = get_point(current, adj_box, prev_entry_point)
+                # distance = forward_reached[current] + heuristic(prev_entry_point, entry_point)
+                distance, heuristic_value = cost_to_next(current, adj_box, dir)
+                if not adj_box in forward_reached or distance < forward_reached[adj_box]:
                     forward_previous[adj_box] = current
-                    forward_reached[adj_box] = (distance, heuristic_value)
-                    frontier.put(((distance, heuristic_value), adj_box, 'f'))
+                    forward_reached[adj_box] = distance
+                    frontier.put((distance + heuristic_value, adj_box, 'f'))
             else:
-                if backward_previous.get(current, None):
-                    prev_entry_point = get_point(backward_previous[current], current)
-                    entry_point = get_point(current, adj_box, prev_entry_point)
-                distance = current_priority[0] + heuristic(prev_entry_point, entry_point)
-                heuristic_value = heuristic(entry_point, starting_point)
-                if not adj_box in backward_reached or backward_reached[adj_box][0] > distance:
+                # if backward_previous.get(current, None):
+                #     prev_entry_point = get_point(backward_previous[current], current)
+                #     entry_point = get_point(current, adj_box, prev_entry_point)
+                # distance = backward_reached[current] + heuristic(prev_entry_point, entry_point)
+                distance, heuristic_value = cost_to_next(current, adj_box, dir)
+                if not adj_box in backward_reached or distance < backward_reached[adj_box]:
                     backward_previous[adj_box] = current
-                    backward_reached[adj_box] = (distance, heuristic_value)
-                    frontier.put(((distance, heuristic_value), adj_box, 'b'))
+                    backward_reached[adj_box] = distance
+                    frontier.put((distance + heuristic_value, adj_box, 'b'))
 
     return [], []
 
@@ -136,7 +152,6 @@ def get_path(history: dict, box) -> list:
 
 def get_point(a_box, b_box=None, start_point=None, end_point=None):
     # lambda functions to find center of box and to find midline
-    center = lambda box: ((box[0] + box[1]) / 2.0, (box[2] + box[3]) / 2.0) #(x, y)
     mid_line = lambda x: mid_line_slope * x + mid_line_offset
 
     #check if boxes are missing, and define start / end points
@@ -148,6 +163,8 @@ def get_point(a_box, b_box=None, start_point=None, end_point=None):
         start_point = center(a_box)
     if not end_point:
         end_point = center(b_box)
+    if a_box == b_box:
+        return end_point if end_point else center(a_box)
 
     #computes slope and offset of line passing through start and end points
     mid_line_slope = (start_point[1] - end_point[1])
@@ -178,3 +195,6 @@ def clamp(value, start, end):
         start = end
         end = temp
     return max(min(value, end), start)
+
+def center(box):
+    return ((box[0] + box[1]) / 2.0, (box[2] + box[3]) / 2.0) #(x, y)
